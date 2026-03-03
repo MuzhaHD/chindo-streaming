@@ -1,47 +1,32 @@
-import { NextRequest, NextResponse } from "next/server";
-import { getToken } from "next-auth/jwt";
+import { auth } from "@/lib/auth";
+import { NextResponse } from "next/server";
 
-const PUBLIC_ROUTES = ["/", "/login", "/register", "/movies"];
-const ADMIN_ROUTES = ["/admin"];
-const AUTH_ROUTES = ["/login", "/register"];
-
-export async function middleware(req: NextRequest) {
+export default auth((req) => {
   const { pathname } = req.nextUrl;
+  const isLoggedIn = !!req.auth;
+  const isAdmin = req.auth?.user?.role === "admin";
 
-  const token = await getToken({
-    req,
-    secret: process.env.NEXTAUTH_SECRET,
-    cookieName: "chindo.session-token",
-  });
-
-  // Redirect authenticated users away from auth pages
-  if (AUTH_ROUTES.some((r) => pathname.startsWith(r)) && token) {
-    return NextResponse.redirect(new URL("/", req.url));
-  }
-
-  // Protect admin routes
-  if (ADMIN_ROUTES.some((r) => pathname.startsWith(r))) {
-    if (!token) {
+  // Admin routes protection
+  if (pathname.startsWith("/admin")) {
+    if (!isAdmin) {
       return NextResponse.redirect(new URL("/login", req.url));
     }
-    if (token.role !== "admin") {
-      return NextResponse.redirect(new URL("/", req.url));
-    }
   }
 
-  // Protect private routes (watch, profile, etc.)
-  const PROTECTED_ROUTES = ["/watch", "/profile", "/watchlist"];
-  if (PROTECTED_ROUTES.some((r) => pathname.startsWith(r)) && !token) {
-    const loginUrl = new URL("/login", req.url);
-    loginUrl.searchParams.set("callbackUrl", pathname);
-    return NextResponse.redirect(loginUrl);
+  // Profile routes protection
+  if (pathname.startsWith("/profile")) {
+    if (!isLoggedIn) {
+      return NextResponse.redirect(new URL("/login", req.url));
+    }
   }
 
   return NextResponse.next();
-}
+});
 
 export const config = {
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|api/auth).*)",
+    "/admin/:path*",
+    "/profile/:path*",
+    "/((?!api|_next/static|_next/image|favicon.ico).*)",
   ],
 };

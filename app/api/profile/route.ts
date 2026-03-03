@@ -1,14 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import connectDB from "@/lib/db";
-import Watchlist from "@/models/Watchlist";
+import User from "@/models/User";
 import { auth } from "@/lib/auth";
 import { z } from "zod";
 
-const toggleSchema = z.object({
-  movieId: z.string(),
+const updateProfileSchema = z.object({
+  name: z.string().min(1).optional(),
 });
 
-export async function POST(request: NextRequest) {
+export async function PATCH(request: NextRequest) {
   try {
     const session = await auth();
     
@@ -28,7 +28,7 @@ export async function POST(request: NextRequest) {
     await connectDB();
 
     const body = await request.json();
-    const parsed = toggleSchema.safeParse(body);
+    const parsed = updateProfileSchema.safeParse(body);
 
     if (!parsed.success) {
       return NextResponse.json(
@@ -43,37 +43,42 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { movieId } = parsed.data;
-    const userId = session.user.id;
+    const user = await User.findByIdAndUpdate(
+      session.user.id,
+      { name: parsed.data.name },
+      { new: true }
+    );
 
-    // Check if already in watchlist
-    const existing = await Watchlist.findOne({ userId, movieId });
-
-    if (existing) {
-      // Remove from watchlist
-      await Watchlist.deleteOne({ _id: existing._id });
-      
-      return NextResponse.json({
-        ok: true,
-        data: { isInWatchlist: false },
-      });
-    } else {
-      // Add to watchlist
-      await Watchlist.create({ userId, movieId });
-      
-      return NextResponse.json({
-        ok: true,
-        data: { isInWatchlist: true },
-      });
+    if (!user) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: {
+            code: "NOT_FOUND",
+            message: "User tidak ditemukan",
+          },
+        },
+        { status: 404 }
+      );
     }
+
+    return NextResponse.json({
+      ok: true,
+      data: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+      },
+    });
   } catch (error) {
-    console.error("Error toggling watchlist:", error);
+    console.error("Profile update error:", error);
     return NextResponse.json(
       {
         ok: false,
         error: {
-          code: "TOGGLE_ERROR",
-          message: "Gagal memperbarui watchlist",
+          code: "UPDATE_ERROR",
+          message: "Gagal memperbarui profil",
         },
       },
       { status: 500 }
